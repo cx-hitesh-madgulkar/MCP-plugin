@@ -2,11 +2,9 @@
   "mcpServers": {
     "checkmarx": {
       "type": "http",
-      "url": "http://localhost:8089",
-      "oauth": {
-        "clientId": "ide-integration",
-        "scopes": ["ast-api", "iam-api", "openid", "offline_access"],
-        "callbackPort": 8976
+      "url": "${CHECKMARX_MCP_URL}",
+      "headers": {
+        "Authorization": "${CHECKMARX_API_KEY}"
       }
     }
   }

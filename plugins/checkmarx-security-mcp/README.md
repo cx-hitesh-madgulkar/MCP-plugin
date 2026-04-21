@@ -10,8 +10,6 @@ A Claude Code plugin that connects Claude to the **Checkmarx Security MCP server
 
 `security-mcp` is a Golang MCP server built by Checkmarx that acts as the bridge between AI assistants and the Checkmarx One platform (SAST, SCA, KICS, Container Security, Secret Detection). This plugin is the thin wrapper that makes the server installable as a Claude Code plugin.
 
-Authentication uses **OAuth 2.0 against Checkmarx IAM** — users sign in through their browser on first use; no API keys need to be pasted or managed.
-
 Once enabled, Claude can:
 
 - Inspect your Checkmarx projects, applications, and scans
@@ -28,8 +26,6 @@ Once enabled, Claude can:
 - **Findings & risk** — `listFindings`, `getFindingDetails`, `getFindingsSummary`, `getTenantVulnerabilitiesSummary`, `getRiskSummary`, `listRiskResults`, `updateRiskResultStatus`
 - **Overview dashboards** — `getApplicationsOverviewCount`, `getApplicationsOverviewAggregate`, `listProjectsOverview`, `getProjectsOverviewAggregate`
 - **Remediation** — `packageRemediation`, `imageRemediation`, `codeRemediation` (incl. secret remediation for api_key, password, token, private_key, database_url, aws_access_key, jwt_secret, generic)
-- **Transport** — HTTP (default)
-- **Auth** — OAuth 2.0 (authorization code + PKCE) against Checkmarx IAM; tokens stored in the OS keychain and refreshed automatically by Claude Code
 
 ---
 
@@ -37,84 +33,83 @@ Once enabled, Claude can:
 
 ### 1. Prerequisites
 
-- A Checkmarx One account (any tenant).
-- A reachable `security-mcp` server endpoint — either a Checkmarx-hosted MCP endpoint for your tenant, or one you run yourself (see [upstream repo](https://github.com/CheckmarxDev/security-mcp)).
+- A Checkmarx One account and a valid API key / access token.
+- A reachable `security-mcp` server endpoint (a Checkmarx-hosted URL for your tenant, or one you run yourself).
 
-### 2. Install the plugin
+### 2. Set environment variables **before** starting Claude
 
-From the Claude Code CLI:
+The plugin reads two variables:
+
+| Variable             | Required | Example                                                 | Notes                                                |
+| -------------------- | -------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| `CHECKMARX_MCP_URL`  | ✅       | `https://<region>.ast.checkmarx.net/<tenant>/api/security-mcp` | Full URL of the `security-mcp` server                |
+| `CHECKMARX_API_KEY`  | ✅       | `Bearer eyJhbGciOi...`                                  | **Must include the literal `Bearer ` prefix**         |
+
+> ⚠️ **`Bearer ` prefix is required.** The plugin passes `CHECKMARX_API_KEY` straight through as the `Authorization` header — it does **not** add `Bearer ` for you. Your env var must include the word `Bearer` followed by a space and then the token.
+
+**Windows (PowerShell / cmd):**
+
+```powershell
+setx CHECKMARX_MCP_URL "https://<region>.ast.checkmarx.net/<tenant>/api/security-mcp"
+setx CHECKMARX_API_KEY "Bearer <your-checkmarx-token>"
+```
+
+> `setx` only affects **new** terminals and processes. Fully quit Claude Code / VS Code (check Task Manager for lingering `claude.exe` / `Code.exe` processes) and reopen before continuing.
+
+**macOS / Linux:** add to `~/.zshrc` or `~/.bashrc`:
 
 ```bash
-# Register the marketplace once
-/plugin marketplace add cx-hitesh-madgulkar/MCP-plugin
+export CHECKMARX_MCP_URL="https://<region>.ast.checkmarx.net/<tenant>/api/security-mcp"
+export CHECKMARX_API_KEY="Bearer <your-checkmarx-token>"
+```
 
-# Install and enable this plugin
+Then reopen your terminal.
+
+### 3. Install and enable the plugin
+
+```bash
+/plugin marketplace add cx-hitesh-madgulkar/MCP-plugin
 /plugin install checkmarx-security-mcp@MCP-plugin
 /plugin enable checkmarx-security-mcp
 ```
 
-### 3. Tell the plugin which server to talk to
+Make sure the toggle in `/plugin` → **Manage Plugins** is **on** (not grey).
 
-The plugin reads **one** environment variable — the URL of the `security-mcp` server:
+### 4. Verify
 
-| Variable             | Required | Example                                                 | Notes                                 |
-| -------------------- | -------- | ------------------------------------------------------- | ------------------------------------- |
-| `CHECKMARX_MCP_URL`  | ✅       | `https://mcp.checkmarx.net/api/security-mcp`            | Base URL of the `security-mcp` server |
-
-On Windows (persistent, new shells only):
-
-```powershell
-setx CHECKMARX_MCP_URL "https://mcp.checkmarx.net/api/security-mcp"
+```
+/reload-plugins
 ```
 
-On macOS / Linux:
-
-```bash
-export CHECKMARX_MCP_URL="https://mcp.checkmarx.net/api/security-mcp"
-```
-
-> 🔐 **No API key / token is required.** Authentication is handled by OAuth the first time you use the server.
-
-### 4. Sign in
-
-Open Claude Code and run:
+Look for `1 plugin MCP server` (not `0`). Then:
 
 ```
 /mcp
 ```
 
-Select `checkmarx` and choose **Authenticate**. Your default browser will open to the Checkmarx IAM login page. After you sign in, Claude Code stores the resulting access + refresh tokens in your OS keychain and the server dot turns green.
-
-You should now see the Checkmarx tools (e.g. `listProjects`, `triggerScan`, `codeRemediation`) available to Claude.
+You should see a `checkmarx` entry. If it shows as connected, you're done — the Checkmarx tools (`listProjects`, `triggerScan`, `codeRemediation`, etc.) are now available to Claude.
 
 ---
 
 ## Authentication
 
-This plugin uses the **standard MCP OAuth flow** (RFC 9728 + RFC 8414):
+The `security-mcp` server expects a **Bearer token** on every request and verifies its signature against the Checkmarx IAM JWKS:
 
-1. Claude Code connects to `${CHECKMARX_MCP_URL}` with no token.
-2. The server returns `401 Unauthorized` with a `WWW-Authenticate` header pointing at its `/.well-known/oauth-protected-resource` document.
-3. Claude Code follows that document to the Checkmarx IAM realm's authorization and token endpoints (the server fills these in automatically based on the tenant).
-4. Claude Code opens a browser, completes an **authorization code flow with PKCE**, and exchanges the code for access + refresh tokens.
-5. Tokens are stored in the OS keychain (Keychain on macOS, Credential Manager on Windows, libsecret on Linux) and refreshed transparently.
+- You supply the token via `CHECKMARX_API_KEY` (including the `Bearer ` prefix).
+- The plugin forwards the full value as the `Authorization` header on each HTTP request.
+- No credentials are stored in the plugin — only read from the environment at runtime.
 
-OAuth client:
-- `client_id`: `ide-integration` (public client; no secret needed)
-- Scopes: `ast-api`, `iam-api`, `openid`, `offline_access`
-- Callback: `http://localhost:8976/callback` (configurable via `callbackPort` in `.mcp.json`)
+Getting a token:
 
-On the server side, every inbound token is signature-verified against the IAM realm's JWKS. **No long-lived credentials ever touch the plugin or `.mcp.json`.**
-
-### Re-authenticating
-
-If your refresh token expires or is revoked, run `/mcp` → `checkmarx` → **Re-authenticate**.
+1. Sign in to Checkmarx One.
+2. **Account Settings → API Keys** → create a new key.
+3. Copy the value and prefix it with `Bearer ` when setting the env var.
 
 ---
 
 ## Usage
 
-Once enabled and authenticated, just ask Claude in natural language. Examples:
+Just ask Claude in natural language. Examples:
 
 - *"List my Checkmarx projects and show which ones have any CRITICAL findings."*
 - *"Trigger a SAST scan on project `payment-api` and wait for it to finish."*
@@ -123,27 +118,35 @@ Once enabled and authenticated, just ask Claude in natural language. Examples:
 - *"For `lodash@4.17.20` (npm), is there a safer alternative version?"*
 - *"Show me the latest 5 scans for application `web-frontend` and drill into failures."*
 
-Claude picks the right MCP tool (`listFindings`, `triggerScan`, `codeRemediation`, etc.) and formats the result for you.
+Claude picks the right MCP tool and formats the result.
 
 ---
 
 ## Troubleshooting
 
-| Symptom                                                | Likely cause                                                                                         |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `checkmarx` server missing from `/mcp`                 | `CHECKMARX_MCP_URL` not exported in the shell that launched Claude (restart your terminal after `setx`)  |
-| Browser doesn't open / OAuth never completes           | Port `8976` is already in use. Change `callbackPort` in `.mcp.json` and re-auth.                     |
-| `401 Unauthorized` after successful auth               | Your IAM user lacks the required scopes (`ast-api`, `iam-api`) — contact your Checkmarx tenant admin. |
-| Server dot is red with no obvious error                | Run `claude --debug` from a terminal to see the underlying MCP / OAuth error.                        |
-| Tools listed but all return empty results              | Your IAM user is scoped to a different tenant than the resources you're querying.                    |
-| OAuth loop after token revocation                      | `/mcp` → `checkmarx` → **Clear authentication**, then authenticate again.                            |
+| Symptom                                                | Likely cause                                                                                                            |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `/reload-plugins` reports `0 plugin MCP servers`       | Plugin toggle is **off**, or `.mcp.json` contains a schema error. Check `/plugin` Manage Plugins.                       |
+| `checkmarx` missing from `/mcp` output                 | Env vars not exported in the shell that launched Claude. Fully restart your terminal / VS Code after `setx`.            |
+| `401 Unauthorized` on every tool call                  | Wrong / expired token, or **`CHECKMARX_API_KEY` missing the `Bearer ` prefix**.                                         |
+| Red dot on `checkmarx` in `/mcp`                       | Connection / auth failure. Run `claude --debug` to see the underlying error.                                            |
+| Tools listed but all return empty results              | Token scoped to a different tenant than the resources you're querying.                                                  |
+| `Failed to parse` error pointing at some other `.mcp.json` | Stray `.mcp.json` somewhere on your system (often in home dir or current working dir). Delete or fix it — not this plugin. |
 
-To debug on the server side, run `security-mcp` with `LOG_LEVEL=debug` and check `/health` on `HEALTH_SERVICE_PORT` (default `4321`).
+Quick env var sanity check in a fresh terminal:
+
+```powershell
+# PowerShell
+$env:CHECKMARX_MCP_URL
+$env:CHECKMARX_API_KEY
+```
+
+Both should print non-empty values. If either is empty, re-run `setx` and open **another** new terminal.
 
 ---
 
 ## Support
 
-- **Issues / feature requests:** open an issue in the [security-mcp repository](https://github.com/CheckmarxDev/security-mcp/issues).
-- **Design docs:** [MCP Server Detailed Design](https://checkmarx.atlassian.net/wiki/spaces/AID/pages/8464105625/MCP+Server+Detailed+Design) (internal).
+- **Issues / feature requests:** [security-mcp repository](https://github.com/CheckmarxDev/security-mcp/issues)
+- **Design docs:** [MCP Server Detailed Design](https://checkmarx.atlassian.net/wiki/spaces/AID/pages/8464105625/MCP+Server+Detailed+Design) (internal)
 - **Checkmarx support:** https://checkmarx.com/support/
