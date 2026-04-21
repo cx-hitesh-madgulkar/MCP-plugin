@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "checkmarx": {
+      "type": "http",
+      "url": "${CHECKMARX_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${CHECKMARX_API_KEY}"
+      }
+    }
+  }
+}

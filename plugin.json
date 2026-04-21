@@ -1,0 +1,24 @@
+{
+  "name": "checkmarx-security-mcp",
+  "displayName": "Checkmarx Security MCP",
+  "version": "0.1.0",
+  "description": "Checkmarx Security MCP plugin for Claude Code. Connects Claude to the Checkmarx One platform for SAST, SCA, KICS, container, and secret-detection workflows: list projects and applications, trigger and monitor scans, inspect findings, and retrieve AI-driven remediation for vulnerable packages, images, and source code.",
+  "author": {
+    "name": "Checkmarx",
+    "url": "https://checkmarx.com"
+  },
+  "homepage": "https://github.com/CheckmarxDev/security-mcp",
+  "repository": "https://github.com/CheckmarxDev/security-mcp",
+  "license": "Apache-2.0",
+  "keywords": [
+    "security",
+    "checkmarx",
+    "sast",
+    "sca",
+    "kics",
+    "secret-detection",
+    "remediation",
+    "vulnerability",
+    "mcp"
+  ]
+}
