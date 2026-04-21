@@ -4,7 +4,7 @@
       "type": "http",
       "url": "${CHECKMARX_MCP_URL}",
       "headers": {
-        "Authorization": "Bearer ${CHECKMARX_API_KEY}"
+        "Authorization": "${CHECKMARX_API_KEY}"
       }
     }
   }
