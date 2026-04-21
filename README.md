@@ -1,122 +1,49 @@
-# Checkmarx Security MCP Plugin
+# MCP-plugin — Checkmarx Plugin Marketplace for Claude Code
 
-A Claude Code plugin that connects Claude to the **Checkmarx Security MCP server** (`security-mcp`), exposing Checkmarx One security workflows directly inside your IDE / CLI session.
+This repository is a **Claude Code plugin marketplace** published by Checkmarx. It currently hosts one plugin:
 
-> Upstream server: [CheckmarxDev/security-mcp](https://github.com/CheckmarxDev/security-mcp)
+| Plugin                                                           | Description                                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [`checkmarx-security-mcp`](./plugins/checkmarx-security-mcp/)    | Connects Claude to the Checkmarx One platform via the `security-mcp` server (SAST / SCA / KICS / secret detection / remediation). |
 
----
+## Install
 
-## Overview
-
-`security-mcp` is a Golang MCP server built by Checkmarx that acts as the bridge between AI assistants and the Checkmarx One platform (SAST, SCA, KICS, Container Security, Secret Detection). This plugin is the thin wrapper that makes the server installable as a Claude Code plugin via `/plugin install`.
-
-Once enabled, Claude can:
-
-- Inspect your Checkmarx projects, applications, and scans
-- Plan and trigger scans on demand
-- Summarize findings and risk posture across tenants
-- Generate remediation guidance for vulnerable **packages**, **container images**, and **source code** (including secrets).
-
----
-
-## Features
-
-- **Project & application management** — `listProjects`, `listApplications`, `resolveProject`, `createProject`, `deleteProject`, `getProjectConfig`, `createApplication`, `associateProject`, `getApplicationDetails`
-- **Scan lifecycle** — `planScan`, `triggerScan`, `getScanDetails`, `listScans`, `getLatestScans`
-- **Findings & risk** — `listFindings`, `getFindingDetails`, `getFindingsSummary`, `getTenantVulnerabilitiesSummary`, `getRiskSummary`, `listRiskResults`, `updateRiskResultStatus`
-- **Overview dashboards** — `getApplicationsOverviewCount`, `getApplicationsOverviewAggregate`, `listProjectsOverview`, `getProjectsOverviewAggregate`
-- **Remediation** — `packageRemediation`, `imageRemediation`, `codeRemediation` (incl. secret remediation: api_key, password, token, private_key, database_url, aws_access_key, jwt_secret, generic)
-- **Transport** — HTTP (default), SSE, or stdio
-- **Auth** — OAuth2 against Checkmarx IAM, with JWT signature verification against the tenant's JWKS
-
----
-
-## Setup
-
-### 1. Prerequisites
-
-- A Checkmarx One tenant and a valid API key (or OAuth2 client credentials).
-- A reachable `security-mcp` server endpoint. You can either:
-  - Point at a Checkmarx-hosted MCP endpoint for your tenant, **or**
-  - Run the server yourself (see [upstream repo](https://github.com/CheckmarxDev/security-mcp) — `docker build -t checkmarx/security-mcp . && docker run -p 8089:8089 checkmarx/security-mcp`).
-
-### 2. Install the plugin
+From the Claude Code CLI:
 
 ```bash
-/plugin install <this-repo-url>
+# Register this repo as a marketplace (one-time)
+/plugin marketplace add cx-hitesh-madgulkar/MCP-plugin
+
+# Install a plugin from it
+/plugin install checkmarx-security-mcp@MCP-plugin
+
+# Enable
 /plugin enable checkmarx-security-mcp
 ```
 
-### 3. Configure environment variables
+> `/plugin` is only available in the Claude Code **CLI**. The VS Code extension does not expose this command — use the terminal.
 
-The plugin reads two variables to wire up the MCP connection:
+See each plugin's own README for its setup, environment variables, and usage:
 
-| Variable             | Required | Example                                       | Notes                                 |
-| -------------------- | -------- | --------------------------------------------- | ------------------------------------- |
-| `CHECKMARX_MCP_URL`  | ✅       | `https://mcp.checkmarx.net/api/security-mcp`  | Base URL of the `security-mcp` server |
-| `CHECKMARX_API_KEY`  | ✅       | `eyJhbGciOi...`                               | Bearer token used in `Authorization`  |
+- [checkmarx-security-mcp](./plugins/checkmarx-security-mcp/README.md)
 
-Set them in your shell before starting Claude:
+## Repository layout
 
-```bash
-export CHECKMARX_MCP_URL="https://mcp.checkmarx.net/api/security-mcp"
-export CHECKMARX_API_KEY="<your-checkmarx-one-api-key>"
+```
+MCP-plugin/
+├─ .claude-plugin/
+│  └─ marketplace.json                ← marketplace manifest (lists plugins)
+├─ plugins/
+│  └─ checkmarx-security-mcp/
+│     ├─ .claude-plugin/
+│     │  └─ plugin.json               ← plugin metadata
+│     ├─ .mcp.json                    ← MCP server config (HTTP + Bearer auth)
+│     └─ README.md
+└─ README.md                          ← (this file)
 ```
 
-### 4. Verify
+## Contributing a new plugin
 
-```bash
-/mcp
-```
-
-You should see a `checkmarx` server listed as connected, and its tools (e.g. `listProjects`, `triggerScan`, `codeRemediation`) available to Claude.
-
----
-
-## Authentication
-
-The `security-mcp` server expects a **Bearer token** on every request and verifies it against the Checkmarx IAM JWKS:
-
-- Supply your Checkmarx One API key via `CHECKMARX_API_KEY`.
-- The plugin forwards it as `Authorization: Bearer <key>`.
-- On the server side, `JWT_VERIFY=true` (default) ensures the token is signature-verified against your tenant's realm under `CX_IAM_URL`.
-- OAuth2 scopes used by the server: `ast-api,basic,email,iam-api,profile,roles`.
-
-No credentials are ever stored in the plugin — only read from the environment at runtime.
-
----
-
-## Usage
-
-Once enabled, just ask Claude in natural language. Examples:
-
-- *"List my Checkmarx projects and show which ones have any CRITICAL findings."*
-- *"Trigger a SAST scan on project `payment-api` and wait for it to finish."*
-- *"Summarize tenant vulnerabilities for the last week, grouped by severity."*
-- *"I got a secret-detection hit for an AWS access key in a Python file — give me remediation steps."*
-- *"For `lodash@4.17.20` (npm), is there a safer alternative version?"*
-- *"Show me the latest 5 scans for application `web-frontend` and drill into failures."*
-
-Claude will pick the right MCP tool (`listFindings`, `triggerScan`, `codeRemediation`, etc.) and format the result for you.
-
----
-
-## Troubleshooting
-
-| Symptom                                   | Likely cause                                                            |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| `checkmarx` server missing from `/mcp`    | Env vars not exported in the shell that launched Claude                 |
-| `401 Unauthorized` on every tool call     | Expired / wrong API key, or token issuer not trusted by the server      |
-| `JWT_VERIFY is enabled but no trust anchor configured` | Server-side: set `CX_IAM_URL` or `JWT_ALLOWED_ISSUERS`     |
-| Connection hangs / times out              | Server URL unreachable, or behind a proxy that blocks SSE/HTTP streams  |
-| Tools listed but all return empty results | API key scoped to a different tenant than the resources you're querying |
-
-To debug server-side, run with `LOG_LEVEL=debug` and check `/health` on `HEALTH_SERVICE_PORT` (default `4321`).
-
----
-
-## Support
-
-- **Issues / feature requests:** open an issue in the [security-mcp repository](https://github.com/CheckmarxDev/security-mcp/issues).
-- **Design docs:** [MCP Server Detailed Design](https://checkmarx.atlassian.net/wiki/spaces/AID/pages/8464105625/MCP+Server+Detailed+Design) (internal).
-- **Checkmarx support:** https://checkmarx.com/support/
+1. Create `plugins/<your-plugin>/` with `.claude-plugin/plugin.json`, `.mcp.json` (if it wraps an MCP server), and `README.md`.
+2. Add an entry for it to `plugins` in [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json).
+3. Open a PR.
